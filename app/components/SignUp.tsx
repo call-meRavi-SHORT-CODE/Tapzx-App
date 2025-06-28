@@ -19,6 +19,7 @@ import {
   SafeAreaView,
   ScrollView,
 } from "react-native"
+import { useAuth } from "../context/AuthContext"
 
 const { width, height } = Dimensions.get("window")
 
@@ -39,6 +40,7 @@ interface ValidationErrors {
 }
 
 export default function SignUpScreen() {
+  const { signUp } = useAuth()
   const [formData, setFormData] = useState<FormData>({
     fullName: "",
     email: "",
@@ -149,13 +151,19 @@ export default function SignUpScreen() {
     setIsLoading(true)
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      await signUp({
+        full_name: formData.fullName.trim(),
+        email: formData.email.toLowerCase().trim(),
+        phone_number: formData.phoneNumber.trim(),
+        password: formData.password,
+        confirm_password: formData.confirmPassword,
+      })
 
-      console.log("User registration data:", formData)
-      router.push("/components/AddLinks")
-    } catch (error) {
-      Alert.alert("Registration Failed", "Something went wrong. Please try again.", [{ text: "OK" }])
+      // Navigate to add links page
+      router.push("/(tabs)/AddLinks")
+    } catch (error: any) {
+      console.error('Sign up error:', error)
+      Alert.alert("Registration Failed", error.message || "Something went wrong. Please try again.", [{ text: "OK" }])
     } finally {
       setIsLoading(false)
     }

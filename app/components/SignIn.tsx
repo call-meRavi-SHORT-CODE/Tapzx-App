@@ -6,6 +6,7 @@ import { router } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import { useEffect, useState } from "react"
 import {
+  Alert,
   Animated,
   Dimensions,
   KeyboardAvoidingView,
@@ -18,14 +19,17 @@ import {
   SafeAreaView,
   ScrollView,
 } from "react-native"
+import { useAuth } from "../context/AuthContext"
 
 const { width, height } = Dimensions.get("window")
 
 export default function SignInScreen() {
+  const { signIn, isAuthenticated, user } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [fadeAnim] = useState(new Animated.Value(0))
   const [slideAnim] = useState(new Animated.Value(50))
 
@@ -44,20 +48,46 @@ export default function SignInScreen() {
     ]).start()
   }, [fadeAnim, slideAnim])
 
-  const handleSignIn = () => {
-    router.push("/(tabs)/HomePage")
+  useEffect(() => {
+    // Redirect if already authenticated
+    if (isAuthenticated && user) {
+      if (user.is_profile_complete) {
+        router.replace("/(tabs)/HomePage")
+      } else {
+        router.replace("/(tabs)/AddLinks")
+      }
+    }
+  }, [isAuthenticated, user])
+
+  const handleSignIn = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert("Error", "Please enter both email and password")
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      await signIn(email.toLowerCase().trim(), password)
+      // Navigation will be handled by useEffect above
+    } catch (error: any) {
+      console.error('Sign in error:', error)
+      Alert.alert("Sign In Failed", error.message || "Invalid email or password. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleGoogleSignIn = () => {
-    console.log("Google sign in pressed")
+    Alert.alert("Coming Soon", "Google sign in will be available soon!")
   }
 
   const handleFacebookSignIn = () => {
-    console.log("Facebook sign in pressed")
+    Alert.alert("Coming Soon", "Facebook sign in will be available soon!")
   }
 
   const handleForgotPassword = () => {
-    console.log("Forgot password pressed")
+    Alert.alert("Forgot Password", "Password reset functionality will be available soon!")
   }
 
   const handleSignUp = () => {
@@ -112,6 +142,7 @@ export default function SignInScreen() {
                     autoCapitalize="none"
                     autoComplete="email"
                     placeholderTextColor="#64748B"
+                    editable={!isLoading}
                   />
                 </View>
               </View>
@@ -128,6 +159,7 @@ export default function SignInScreen() {
                     secureTextEntry={!showPassword}
                     autoComplete="password"
                     placeholderTextColor="#64748B"
+                    editable={!isLoading}
                   />
                   <TouchableOpacity
                     style={styles.eyeIcon}
@@ -157,10 +189,20 @@ export default function SignInScreen() {
               </View>
 
               {/* Sign In Button */}
-              <TouchableOpacity style={styles.signInButton} onPress={handleSignIn} activeOpacity={0.9}>
-                <LinearGradient colors={["#F59E0B", "#FBBF24"]} style={styles.signInGradient}>
-                  <Text style={styles.signInButtonText}>Sign In</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#0F172A" style={styles.arrowIcon} />
+              <TouchableOpacity 
+                style={[styles.signInButton, isLoading && styles.signInButtonDisabled]} 
+                onPress={handleSignIn} 
+                activeOpacity={0.9}
+                disabled={isLoading}
+              >
+                <LinearGradient 
+                  colors={isLoading ? ["#64748B", "#64748B"] : ["#F59E0B", "#FBBF24"]} 
+                  style={styles.signInGradient}
+                >
+                  <Text style={styles.signInButtonText}>
+                    {isLoading ? "Signing In..." : "Sign In"}
+                  </Text>
+                  {!isLoading && <Ionicons name="arrow-forward" size={16} color="#0F172A" style={styles.arrowIcon} />}
                 </LinearGradient>
               </TouchableOpacity>
 
@@ -246,7 +288,7 @@ const styles = StyleSheet.create({
   },
   logoIcon: {
     marginRight: 8,
-    transform: [{ rotate: '45deg' }], // Rotate 45 degrees
+    transform: [{ rotate: '45deg' }],
   },
   logoText: {
     fontSize: 24,
@@ -343,6 +385,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  signInButtonDisabled: {
+    shadowOpacity: 0,
+    elevation: 0,
   },
   signInGradient: {
     flexDirection: "row",
