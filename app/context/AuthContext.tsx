@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiService } from '../services/api';
 
 interface User {
-  id: string;
+  id: number;
   full_name: string;
   email: string;
   phone_number: string;

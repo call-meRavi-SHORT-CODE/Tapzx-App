@@ -1,12 +1,9 @@
 import re
-from bson import ObjectId
+import sqlite3
 
-def serialize_doc(doc):
-    """Convert ObjectId to string in MongoDB document"""
-    if doc:
-        doc['_id'] = str(doc['_id'])
-        return doc
-    return None
+def dict_from_row(row):
+    """Convert sqlite3.Row to dictionary"""
+    return dict(row) if row else None
 
 def validate_email(email):
     """Validate email format"""
@@ -24,10 +21,6 @@ def validate_username(username):
     pattern = r'^[a-zA-Z0-9_-]{3,30}$'
     return re.match(pattern, username) is not None
 
-def validate_object_id(object_id):
-    """Validate MongoDB ObjectId"""
-    return ObjectId.is_valid(object_id)
-
 def create_response(success=True, message="", data=None, error=None, status_code=200):
     """Create standardized API response"""
     response = {
@@ -42,3 +35,15 @@ def create_response(success=True, message="", data=None, error=None, status_code
         response["error"] = error
     
     return response, status_code
+
+def validate_required_fields(data, required_fields):
+    """Validate that all required fields are present"""
+    missing_fields = []
+    for field in required_fields:
+        if not data.get(field):
+            missing_fields.append(field)
+    
+    if missing_fields:
+        return False, f"Missing required fields: {', '.join(missing_fields)}"
+    
+    return True, None

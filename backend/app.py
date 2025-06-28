@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pymongo import MongoClient
-from bson import ObjectId
+import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import re
 import os
 from dotenv import load_dotenv
+import json
 
 # Load environment variables
 load_dotenv()
@@ -14,28 +14,80 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# MongoDB Configuration
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
-DATABASE_NAME = os.getenv('DATABASE_NAME', 'tapzx_db')
+# SQLite Configuration
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'tapzx.db')
 
-try:
-    client = MongoClient(MONGO_URI)
-    db = client[DATABASE_NAME]
-    print("Connected to MongoDB successfully!")
-except Exception as e:
-    print(f"Error connecting to MongoDB: {e}")
+def get_db_connection():
+    """Get database connection"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.row_factory = sqlite3.Row  # This enables column access by name
+    return conn
 
-# Collections
-users_collection = db.users
-links_collection = db.links
-profiles_collection = db.profiles
+def init_database():
+    """Initialize database with tables"""
+    conn = get_db_connection()
+    
+    # Create users table
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            phone_number TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_profile_complete BOOLEAN DEFAULT FALSE
+        )
+    ''')
+    
+    # Create links table
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            website TEXT,
+            email TEXT,
+            phone TEXT,
+            whatsapp TEXT,
+            instagram TEXT,
+            twitter TEXT,
+            linkedin TEXT,
+            facebook TEXT,
+            youtube TEXT,
+            tiktok TEXT,
+            github TEXT,
+            discord TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            UNIQUE(user_id)
+        )
+    ''')
+    
+    # Create profiles table
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT UNIQUE NOT NULL,
+            organization_name TEXT NOT NULL,
+            bio TEXT NOT NULL,
+            location TEXT NOT NULL,
+            profile_image TEXT,
+            profile_url TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            UNIQUE(user_id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("Database initialized successfully!")
 
-# Helper function to convert ObjectId to string
-def serialize_doc(doc):
-    if doc:
-        doc['_id'] = str(doc['_id'])
-        return doc
-    return None
+# Initialize database on startup
+init_database()
 
 # Validation functions
 def validate_email(email):
@@ -43,23 +95,24 @@ def validate_email(email):
     return re.match(pattern, email) is not None
 
 def validate_phone(phone):
-    # Remove spaces and special characters
     phone_clean = re.sub(r'[^\d+]', '', phone)
-    # Check if it's a valid phone number (10-15 digits, optionally starting with +)
     pattern = r'^\+?[1-9]\d{9,14}$'
     return re.match(pattern, phone_clean) is not None
 
 def validate_username(username):
-    # Username should be 3-30 characters, alphanumeric, underscore, hyphen
     pattern = r'^[a-zA-Z0-9_-]{3,30}$'
     return re.match(pattern, username) is not None
+
+def dict_from_row(row):
+    """Convert sqlite3.Row to dictionary"""
+    return dict(row) if row else None
 
 # Routes
 
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({
-        "message": "Tapzx Backend API",
+        "message": "Tapzx Backend API with SQLite",
         "version": "1.0.0",
         "status": "running"
     })
@@ -99,29 +152,31 @@ def signup():
         if password != confirm_password:
             return jsonify({"error": "Passwords do not match"}), 400
         
+        conn = get_db_connection()
+        
         # Check if user already exists
-        if users_collection.find_one({"email": email}):
+        existing_email = conn.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+        if existing_email:
+            conn.close()
             return jsonify({"error": "Email already registered"}), 400
         
-        if users_collection.find_one({"phone_number": phone_number}):
+        existing_phone = conn.execute('SELECT id FROM users WHERE phone_number = ?', (phone_number,)).fetchone()
+        if existing_phone:
+            conn.close()
             return jsonify({"error": "Phone number already registered"}), 400
         
         # Hash password
         hashed_password = generate_password_hash(password)
         
-        # Create user document
-        user_doc = {
-            "full_name": full_name,
-            "email": email,
-            "phone_number": phone_number,
-            "password": hashed_password,
-            "created_at": datetime.utcnow(),
-            "is_profile_complete": False
-        }
-        
         # Insert user
-        result = users_collection.insert_one(user_doc)
-        user_id = str(result.inserted_id)
+        cursor = conn.execute('''
+            INSERT INTO users (full_name, email, phone_number, password)
+            VALUES (?, ?, ?, ?)
+        ''', (full_name, email, phone_number, hashed_password))
+        
+        user_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
         
         return jsonify({
             "message": "User created successfully",
@@ -143,8 +198,12 @@ def signin():
         email = data['email'].strip().lower()
         password = data['password']
         
+        conn = get_db_connection()
+        
         # Find user
-        user = users_collection.find_one({"email": email})
+        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        conn.close()
+        
         if not user:
             return jsonify({"error": "Invalid email or password"}), 401
         
@@ -155,13 +214,13 @@ def signin():
         # Return user info
         return jsonify({
             "message": "Login successful",
-            "user_id": str(user['_id']),
+            "user_id": user['id'],
             "user": {
-                "id": str(user['_id']),
+                "id": user['id'],
                 "full_name": user['full_name'],
                 "email": user['email'],
                 "phone_number": user['phone_number'],
-                "is_profile_complete": user.get('is_profile_complete', False)
+                "is_profile_complete": bool(user['is_profile_complete'])
             },
             "success": True
         }), 200
@@ -169,23 +228,23 @@ def signin():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/auth/check-user/<user_id>', methods=['GET'])
+@app.route('/api/auth/check-user/<int:user_id>', methods=['GET'])
 def check_user(user_id):
     try:
-        if not ObjectId.is_valid(user_id):
-            return jsonify({"error": "Invalid user ID"}), 400
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+        conn.close()
         
-        user = users_collection.find_one({"_id": ObjectId(user_id)})
         if not user:
             return jsonify({"error": "User not found"}), 404
         
         return jsonify({
             "user": {
-                "id": str(user['_id']),
+                "id": user['id'],
                 "full_name": user['full_name'],
                 "email": user['email'],
                 "phone_number": user['phone_number'],
-                "is_profile_complete": user.get('is_profile_complete', False)
+                "is_profile_complete": bool(user['is_profile_complete'])
             },
             "success": True
         }), 200
@@ -205,48 +264,50 @@ def save_links():
         
         user_id = data['user_id']
         
-        if not ObjectId.is_valid(user_id):
-            return jsonify({"error": "Invalid user ID"}), 400
+        conn = get_db_connection()
         
         # Check if user exists
-        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        user = conn.execute('SELECT id FROM users WHERE id = ?', (user_id,)).fetchone()
         if not user:
+            conn.close()
             return jsonify({"error": "User not found"}), 404
         
-        # Prepare links document
-        links_doc = {
-            "user_id": user_id,
-            "website": data.get('website'),
-            "email": data.get('email'),
-            "phone": data.get('phone'),
-            "whatsapp": data.get('whatsapp'),
-            "instagram": data.get('instagram'),
-            "twitter": data.get('twitter'),
-            "linkedin": data.get('linkedin'),
-            "facebook": data.get('facebook'),
-            "youtube": data.get('youtube'),
-            "tiktok": data.get('tiktok'),
-            "github": data.get('github'),
-            "discord": data.get('discord'),
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
-        
         # Check if links already exist for this user
-        existing_links = links_collection.find_one({"user_id": user_id})
+        existing_links = conn.execute('SELECT id FROM links WHERE user_id = ?', (user_id,)).fetchone()
         
         if existing_links:
             # Update existing links
-            links_doc["updated_at"] = datetime.utcnow()
-            links_collection.update_one(
-                {"user_id": user_id},
-                {"$set": links_doc}
-            )
+            conn.execute('''
+                UPDATE links SET 
+                website = ?, email = ?, phone = ?, whatsapp = ?, instagram = ?,
+                twitter = ?, linkedin = ?, facebook = ?, youtube = ?, tiktok = ?,
+                github = ?, discord = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            ''', (
+                data.get('website'), data.get('email'), data.get('phone'),
+                data.get('whatsapp'), data.get('instagram'), data.get('twitter'),
+                data.get('linkedin'), data.get('facebook'), data.get('youtube'),
+                data.get('tiktok'), data.get('github'), data.get('discord'),
+                user_id
+            ))
             message = "Links updated successfully"
         else:
             # Create new links
-            links_collection.insert_one(links_doc)
+            conn.execute('''
+                INSERT INTO links (
+                    user_id, website, email, phone, whatsapp, instagram,
+                    twitter, linkedin, facebook, youtube, tiktok, github, discord
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                user_id, data.get('website'), data.get('email'), data.get('phone'),
+                data.get('whatsapp'), data.get('instagram'), data.get('twitter'),
+                data.get('linkedin'), data.get('facebook'), data.get('youtube'),
+                data.get('tiktok'), data.get('github'), data.get('discord')
+            ))
             message = "Links saved successfully"
+        
+        conn.commit()
+        conn.close()
         
         return jsonify({
             "message": message,
@@ -256,18 +317,18 @@ def save_links():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/links/get/<user_id>', methods=['GET'])
+@app.route('/api/links/get/<int:user_id>', methods=['GET'])
 def get_links(user_id):
     try:
-        if not ObjectId.is_valid(user_id):
-            return jsonify({"error": "Invalid user ID"}), 400
+        conn = get_db_connection()
+        links = conn.execute('SELECT * FROM links WHERE user_id = ?', (user_id,)).fetchone()
+        conn.close()
         
-        links = links_collection.find_one({"user_id": user_id})
         if not links:
             return jsonify({"error": "Links not found"}), 404
         
         return jsonify({
-            "links": serialize_doc(links),
+            "links": dict_from_row(links),
             "success": True
         }), 200
         
@@ -294,75 +355,73 @@ def save_profile():
         location = data['location'].strip()
         profile_image = data.get('profile_image')
         
-        if not ObjectId.is_valid(user_id):
-            return jsonify({"error": "Invalid user ID"}), 400
+        conn = get_db_connection()
         
         # Check if user exists
-        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        user = conn.execute('SELECT id FROM users WHERE id = ?', (user_id,)).fetchone()
         if not user:
+            conn.close()
             return jsonify({"error": "User not found"}), 404
         
         # Validate username
         if not validate_username(username):
+            conn.close()
             return jsonify({"error": "Username must be 3-30 characters and contain only letters, numbers, underscore, and hyphen"}), 400
         
         # Check if username is already taken by another user
-        existing_profile = profiles_collection.find_one({
-            "username": username,
-            "user_id": {"$ne": user_id}
-        })
+        existing_profile = conn.execute(
+            'SELECT id FROM profiles WHERE username = ? AND user_id != ?', 
+            (username, user_id)
+        ).fetchone()
         if existing_profile:
+            conn.close()
             return jsonify({"error": "Username already taken"}), 400
         
         # Validate bio word count
         bio_words = len(bio.split())
         if bio_words > 150:
+            conn.close()
             return jsonify({"error": "Bio cannot exceed 150 words"}), 400
         
         # Validate other fields
         if len(organization_name) < 2:
+            conn.close()
             return jsonify({"error": "Organization name must be at least 2 characters"}), 400
         
         if len(location) < 2:
+            conn.close()
             return jsonify({"error": "Location must be at least 2 characters"}), 400
         
         # Generate profile URL
         profile_url = f"tapzx.app/{username}"
         
-        # Prepare profile document
-        profile_doc = {
-            "user_id": user_id,
-            "username": username,
-            "organization_name": organization_name,
-            "bio": bio,
-            "location": location,
-            "profile_image": profile_image,
-            "profile_url": profile_url,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
-        
         # Check if profile already exists for this user
-        existing_user_profile = profiles_collection.find_one({"user_id": user_id})
+        existing_user_profile = conn.execute('SELECT id FROM profiles WHERE user_id = ?', (user_id,)).fetchone()
         
         if existing_user_profile:
             # Update existing profile
-            profile_doc["updated_at"] = datetime.utcnow()
-            profiles_collection.update_one(
-                {"user_id": user_id},
-                {"$set": profile_doc}
-            )
+            conn.execute('''
+                UPDATE profiles SET 
+                username = ?, organization_name = ?, bio = ?, location = ?,
+                profile_image = ?, profile_url = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            ''', (username, organization_name, bio, location, profile_image, profile_url, user_id))
             message = "Profile updated successfully"
         else:
             # Create new profile
-            profiles_collection.insert_one(profile_doc)
+            conn.execute('''
+                INSERT INTO profiles (
+                    user_id, username, organization_name, bio, location,
+                    profile_image, profile_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, username, organization_name, bio, location, profile_image, profile_url))
             message = "Profile created successfully"
         
         # Update user's profile completion status
-        users_collection.update_one(
-            {"_id": ObjectId(user_id)},
-            {"$set": {"is_profile_complete": True}}
-        )
+        conn.execute('UPDATE users SET is_profile_complete = TRUE WHERE id = ?', (user_id,))
+        
+        conn.commit()
+        conn.close()
         
         return jsonify({
             "message": message,
@@ -373,18 +432,18 @@ def save_profile():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/profile/get/<user_id>', methods=['GET'])
+@app.route('/api/profile/get/<int:user_id>', methods=['GET'])
 def get_profile(user_id):
     try:
-        if not ObjectId.is_valid(user_id):
-            return jsonify({"error": "Invalid user ID"}), 400
+        conn = get_db_connection()
+        profile = conn.execute('SELECT * FROM profiles WHERE user_id = ?', (user_id,)).fetchone()
+        conn.close()
         
-        profile = profiles_collection.find_one({"user_id": user_id})
         if not profile:
             return jsonify({"error": "Profile not found"}), 404
         
         return jsonify({
-            "profile": serialize_doc(profile),
+            "profile": dict_from_row(profile),
             "success": True
         }), 200
         
@@ -402,7 +461,9 @@ def check_username(username):
                 "message": "Username must be 3-30 characters and contain only letters, numbers, underscore, and hyphen"
             }), 400
         
-        existing_profile = profiles_collection.find_one({"username": username})
+        conn = get_db_connection()
+        existing_profile = conn.execute('SELECT id FROM profiles WHERE username = ?', (username,)).fetchone()
+        conn.close()
         
         return jsonify({
             "username": username,
@@ -418,25 +479,32 @@ def get_profile_by_username(username):
     try:
         username = username.strip().lower()
         
-        profile = profiles_collection.find_one({"username": username})
+        conn = get_db_connection()
+        
+        # Get profile
+        profile = conn.execute('SELECT * FROM profiles WHERE username = ?', (username,)).fetchone()
         if not profile:
+            conn.close()
             return jsonify({"error": "Profile not found"}), 404
         
         # Get user info
-        user = users_collection.find_one({"_id": ObjectId(profile['user_id'])})
+        user = conn.execute('SELECT * FROM users WHERE id = ?', (profile['user_id'],)).fetchone()
         if not user:
+            conn.close()
             return jsonify({"error": "User not found"}), 404
         
         # Get links
-        links = links_collection.find_one({"user_id": profile['user_id']})
+        links = conn.execute('SELECT * FROM links WHERE user_id = ?', (profile['user_id'],)).fetchone()
+        
+        conn.close()
         
         return jsonify({
-            "profile": serialize_doc(profile),
+            "profile": dict_from_row(profile),
             "user": {
                 "full_name": user['full_name'],
                 "email": user['email']
             },
-            "links": serialize_doc(links) if links else None,
+            "links": dict_from_row(links) if links else None,
             "success": True
         }), 200
         
@@ -445,34 +513,36 @@ def get_profile_by_username(username):
 
 # Complete User Data Route
 
-@app.route('/api/user/complete/<user_id>', methods=['GET'])
+@app.route('/api/user/complete/<int:user_id>', methods=['GET'])
 def get_complete_user_data(user_id):
     try:
-        if not ObjectId.is_valid(user_id):
-            return jsonify({"error": "Invalid user ID"}), 400
+        conn = get_db_connection()
         
         # Get user
-        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        user = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
         if not user:
+            conn.close()
             return jsonify({"error": "User not found"}), 404
         
         # Get links
-        links = links_collection.find_one({"user_id": user_id})
+        links = conn.execute('SELECT * FROM links WHERE user_id = ?', (user_id,)).fetchone()
         
         # Get profile
-        profile = profiles_collection.find_one({"user_id": user_id})
+        profile = conn.execute('SELECT * FROM profiles WHERE user_id = ?', (user_id,)).fetchone()
+        
+        conn.close()
         
         return jsonify({
             "user": {
-                "id": str(user['_id']),
+                "id": user['id'],
                 "full_name": user['full_name'],
                 "email": user['email'],
                 "phone_number": user['phone_number'],
-                "is_profile_complete": user.get('is_profile_complete', False),
-                "created_at": user['created_at'].isoformat()
+                "is_profile_complete": bool(user['is_profile_complete']),
+                "created_at": user['created_at']
             },
-            "links": serialize_doc(links) if links else None,
-            "profile": serialize_doc(profile) if profile else None,
+            "links": dict_from_row(links) if links else None,
+            "profile": dict_from_row(profile) if profile else None,
             "success": True
         }), 200
         
@@ -484,11 +554,14 @@ def get_complete_user_data(user_id):
 def health_check():
     try:
         # Test database connection
-        db.command('ping')
+        conn = get_db_connection()
+        conn.execute('SELECT 1').fetchone()
+        conn.close()
+        
         return jsonify({
             "status": "healthy",
             "database": "connected",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }), 200
     except Exception as e:
         return jsonify({

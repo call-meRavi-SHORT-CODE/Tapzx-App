@@ -4,9 +4,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    # MongoDB settings
-    MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
-    DATABASE_NAME = os.getenv('DATABASE_NAME', 'tapzx_db')
+    # SQLite settings
+    DATABASE_PATH = os.getenv('DATABASE_PATH', 'tapzx.db')
     
     # Flask settings
     SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')

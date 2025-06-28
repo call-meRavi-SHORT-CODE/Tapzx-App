@@ -14,7 +14,7 @@ export interface SignInData {
 }
 
 export interface LinksData {
-  user_id: string;
+  user_id: number;
   website?: string;
   email?: string;
   phone?: string;
@@ -30,7 +30,7 @@ export interface LinksData {
 }
 
 export interface ProfileData {
-  user_id: string;
+  user_id: number;
   username: string;
   organization_name: string;
   bio: string;
@@ -77,7 +77,7 @@ class ApiService {
     });
   }
 
-  async checkUser(userId: string) {
+  async checkUser(userId: number) {
     return this.makeRequest(`/auth/check-user/${userId}`);
   }
 
@@ -89,7 +89,7 @@ class ApiService {
     });
   }
 
-  async getLinks(userId: string) {
+  async getLinks(userId: number) {
     return this.makeRequest(`/links/get/${userId}`);
   }
 
@@ -101,7 +101,7 @@ class ApiService {
     });
   }
 
-  async getProfile(userId: string) {
+  async getProfile(userId: number) {
     return this.makeRequest(`/profile/get/${userId}`);
   }
 
@@ -114,7 +114,7 @@ class ApiService {
   }
 
   // User endpoints
-  async getCompleteUserData(userId: string) {
+  async getCompleteUserData(userId: number) {
     return this.makeRequest(`/user/complete/${userId}`);
   }
 

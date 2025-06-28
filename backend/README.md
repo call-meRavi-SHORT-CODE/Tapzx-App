@@ -1,6 +1,6 @@
-# Tapzx Backend API
+# Tapzx Backend API with SQLite
 
-A Flask backend with MongoDB for the Tapzx digital business card application.
+A Flask backend with SQLite database for the Tapzx digital business card application.
 
 ## Features
 
@@ -8,7 +8,7 @@ A Flask backend with MongoDB for the Tapzx digital business card application.
 - **User Management**: Complete user profile management
 - **Links Management**: Social media and contact links for each user
 - **Profile Management**: User profiles with custom usernames and URLs
-- **Database**: MongoDB with proper indexing and relationships
+- **Database**: SQLite with proper relationships and constraints
 - **Security**: Password hashing, input validation
 - **API Documentation**: RESTful API endpoints
 
@@ -18,12 +18,13 @@ A Flask backend with MongoDB for the Tapzx digital business card application.
 backend/
 ├── app.py              # Main Flask application
 ├── config.py           # Configuration settings
-├── database.py         # MongoDB connection and setup
+├── database.py         # SQLite connection and setup
 ├── models.py           # Data models
 ├── utils.py            # Utility functions
 ├── requirements.txt    # Python dependencies
 ├── .env               # Environment variables
 ├── run.py             # Application runner
+├── tapzx.db           # SQLite database file (auto-created)
 └── README.md          # This file
 ```
 
@@ -45,12 +46,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. **Set up MongoDB**
-   - Install MongoDB locally or use MongoDB Atlas
-   - Update the `MONGO_URI` in `.env` file
-
-5. **Configure environment variables**
-   - Update `.env` file with your MongoDB connection string
+4. **Configure environment variables**
+   - The `.env` file is already configured for SQLite
+   - Database file will be created automatically
 
 ## Running the Application
 
@@ -62,6 +60,63 @@ python app.py
 2. **Access the API**
    - API: http://localhost:5000
    - Health Check: http://localhost:5000/api/health
+
+## Database Schema
+
+### Users Table
+```sql
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    phone_number TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_profile_complete BOOLEAN DEFAULT FALSE
+);
+```
+
+### Links Table
+```sql
+CREATE TABLE links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    website TEXT,
+    email TEXT,
+    phone TEXT,
+    whatsapp TEXT,
+    instagram TEXT,
+    twitter TEXT,
+    linkedin TEXT,
+    facebook TEXT,
+    youtube TEXT,
+    tiktok TEXT,
+    github TEXT,
+    discord TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id),
+    UNIQUE(user_id)
+);
+```
+
+### Profiles Table
+```sql
+CREATE TABLE profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    username TEXT UNIQUE NOT NULL,
+    organization_name TEXT NOT NULL,
+    bio TEXT NOT NULL,
+    location TEXT NOT NULL,
+    profile_image TEXT,
+    profile_url TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id),
+    UNIQUE(user_id)
+);
+```
 
 ## API Endpoints
 
@@ -86,59 +141,6 @@ python app.py
 ### Health Check
 - `GET /api/health` - API health status
 
-## Database Schema
-
-### Users Collection
-```json
-{
-  "_id": "ObjectId",
-  "full_name": "string",
-  "email": "string (unique)",
-  "phone_number": "string (unique)",
-  "password": "string (hashed)",
-  "created_at": "datetime",
-  "is_profile_complete": "boolean"
-}
-```
-
-### Links Collection
-```json
-{
-  "_id": "ObjectId",
-  "user_id": "string (references users._id)",
-  "website": "string (optional)",
-  "email": "string (optional)",
-  "phone": "string (optional)",
-  "whatsapp": "string (optional)",
-  "instagram": "string (optional)",
-  "twitter": "string (optional)",
-  "linkedin": "string (optional)",
-  "facebook": "string (optional)",
-  "youtube": "string (optional)",
-  "tiktok": "string (optional)",
-  "github": "string (optional)",
-  "discord": "string (optional)",
-  "created_at": "datetime",
-  "updated_at": "datetime"
-}
-```
-
-### Profiles Collection
-```json
-{
-  "_id": "ObjectId",
-  "user_id": "string (references users._id, unique)",
-  "username": "string (unique)",
-  "organization_name": "string",
-  "bio": "string (max 150 words)",
-  "location": "string",
-  "profile_image": "string (optional)",
-  "profile_url": "string (tapzx.app/username)",
-  "created_at": "datetime",
-  "updated_at": "datetime"
-}
-```
-
 ## User Journey
 
 1. **Step 1**: User signs up with basic info (name, email, phone, password)
@@ -149,31 +151,37 @@ python app.py
 ## Environment Variables
 
 ```env
-# MongoDB Configuration
-MONGO_URI=mongodb://localhost:27017/
-DATABASE_NAME=tapzx_db
+# SQLite Database Configuration
+DATABASE_PATH=tapzx.db
 
 # Flask Configuration
 FLASK_ENV=development
 FLASK_DEBUG=True
+SECRET_KEY=your-secret-key-here
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=5000
 ```
 
-## Security Features
+## Key Differences from MongoDB Version
 
-- Password hashing with Werkzeug
-- Input validation
-- Unique constraints on email, phone, username
-- CORS configuration for frontend integration
+1. **Database**: Uses SQLite instead of MongoDB
+2. **IDs**: Uses integer auto-increment IDs instead of ObjectIds
+3. **Relationships**: Uses foreign key constraints
+4. **Queries**: Uses SQL instead of MongoDB queries
+5. **File-based**: Database is stored in a single file (`tapzx.db`)
 
-## Error Handling
+## Advantages of SQLite
 
-- Proper HTTP status codes
-- Detailed error messages
-- Validation error responses
+- **No Setup Required**: No need to install or configure a database server
+- **File-based**: Entire database in a single file
+- **ACID Compliant**: Full transaction support
+- **Fast**: Excellent performance for small to medium applications
+- **Portable**: Database file can be easily moved or backed up
+- **SQL Standard**: Uses standard SQL syntax
 
 ## Testing the API
-
-You can test the API endpoints using tools like Postman or curl:
 
 ### Example: User Signup
 ```bash
@@ -198,12 +206,52 @@ curl -X POST http://localhost:5000/api/auth/signin \
   }'
 ```
 
+## Database Management
+
+### View Database Contents
+You can use any SQLite browser or command line:
+
+```bash
+sqlite3 tapzx.db
+.tables
+SELECT * FROM users;
+SELECT * FROM links;
+SELECT * FROM profiles;
+```
+
+### Backup Database
+```bash
+cp tapzx.db tapzx_backup.db
+```
+
+### Reset Database
+```bash
+rm tapzx.db
+# Restart the application to recreate tables
+```
+
 ## Production Deployment
 
 1. **Environment**: Set `FLASK_ENV=production`
-2. **Database**: Use MongoDB Atlas or production MongoDB
-3. **Security**: Use strong passwords and secure connections
-4. **CORS**: Update allowed origins for your frontend domain
+2. **Database**: Ensure proper file permissions for SQLite file
+3. **Security**: Use strong SECRET_KEY
+4. **Backup**: Regular database file backups
+5. **Performance**: Consider connection pooling for high traffic
+
+## Security Features
+
+- Password hashing with Werkzeug
+- Input validation and sanitization
+- Unique constraints on email, phone, username
+- SQL injection prevention with parameterized queries
+- CORS configuration for frontend integration
+
+## Error Handling
+
+- Proper HTTP status codes
+- Detailed error messages
+- Database constraint error handling
+- Validation error responses
 
 ## Support
 
