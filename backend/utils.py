@@ -1,0 +1,44 @@
+import re
+from bson import ObjectId
+
+def serialize_doc(doc):
+    """Convert ObjectId to string in MongoDB document"""
+    if doc:
+        doc['_id'] = str(doc['_id'])
+        return doc
+    return None
+
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+def validate_phone(phone):
+    """Validate phone number format"""
+    phone_clean = re.sub(r'[^\d+]', '', phone)
+    pattern = r'^\+?[1-9]\d{9,14}$'
+    return re.match(pattern, phone_clean) is not None
+
+def validate_username(username):
+    """Validate username format"""
+    pattern = r'^[a-zA-Z0-9_-]{3,30}$'
+    return re.match(pattern, username) is not None
+
+def validate_object_id(object_id):
+    """Validate MongoDB ObjectId"""
+    return ObjectId.is_valid(object_id)
+
+def create_response(success=True, message="", data=None, error=None, status_code=200):
+    """Create standardized API response"""
+    response = {
+        "success": success,
+        "message": message
+    }
+    
+    if data:
+        response.update(data)
+    
+    if error:
+        response["error"] = error
+    
+    return response, status_code

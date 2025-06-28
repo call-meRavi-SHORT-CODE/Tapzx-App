@@ -7,13 +7,11 @@ interface User {
   full_name: string;
   email: string;
   phone_number: string;
-  created_at: string;
   is_profile_complete: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<void>;
@@ -24,12 +22,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'user_data';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -38,22 +34,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadStoredAuth = async () => {
     try {
-      const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
       const storedUser = await AsyncStorage.getItem(USER_KEY);
 
-      if (storedToken && storedUser) {
-        // Verify token is still valid
+      if (storedUser) {
+        const userData = JSON.parse(storedUser);
+        
+        // Verify user still exists in backend
         try {
-          const tokenVerification = await apiService.verifyToken(storedToken);
-          if (tokenVerification.valid) {
-            setToken(storedToken);
-            setUser(JSON.parse(storedUser));
+          const response = await apiService.checkUser(userData.id);
+          if (response.success) {
+            setUser(response.user);
           } else {
-            // Token is invalid, clear storage
             await clearAuth();
           }
         } catch (error) {
-          console.error('Token verification failed:', error);
+          console.error('User verification failed:', error);
           await clearAuth();
         }
       }
@@ -65,8 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const clearAuth = async () => {
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
-    setToken(null);
+    await AsyncStorage.removeItem(USER_KEY);
     setUser(null);
   };
 
@@ -74,32 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await apiService.signIn({ email, password });
       
-      const newToken = response.access_token;
-      const userData = {
-        id: response.user_id,
-        full_name: '', // Will be fetched separately
-        email,
-        phone_number: '',
-        created_at: new Date().toISOString(),
-        is_profile_complete: response.is_profile_complete,
-      };
+      const userData = response.user;
 
-      // Get complete user data
-      try {
-        const userInfo = await apiService.getCurrentUser(newToken);
-        userData.full_name = userInfo.full_name;
-        userData.phone_number = userInfo.phone_number;
-        userData.created_at = userInfo.created_at;
-        userData.is_profile_complete = userInfo.is_profile_complete;
-      } catch (error) {
-        console.error('Error fetching user info:', error);
-      }
-
-      // Store auth data
-      await AsyncStorage.setItem(TOKEN_KEY, newToken);
+      // Store user data
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(userData));
 
-      setToken(newToken);
       setUser(userData);
     } catch (error) {
       console.error('Sign in error:', error);
@@ -111,22 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await apiService.signUp(userData);
       
-      const newToken = response.access_token;
-      const newUser = {
-        id: response.user_id,
-        full_name: userData.full_name,
-        email: userData.email,
-        phone_number: userData.phone_number,
-        created_at: new Date().toISOString(),
-        is_profile_complete: false,
-      };
-
-      // Store auth data
-      await AsyncStorage.setItem(TOKEN_KEY, newToken);
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(newUser));
-
-      setToken(newToken);
-      setUser(newUser);
+      // After signup, sign in the user
+      await signIn(userData.email, userData.password);
     } catch (error) {
       console.error('Sign up error:', error);
       throw error;
@@ -147,9 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = {
     user,
-    token,
     isLoading,
-    isAuthenticated: !!token && !!user,
+    isAuthenticated: !!user,
     signIn,
     signUp,
     signOut,

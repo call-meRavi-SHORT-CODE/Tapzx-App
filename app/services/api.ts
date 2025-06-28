@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = 'http://localhost:5000/api';
 
 export interface SignUpData {
   full_name: string;
@@ -14,6 +14,7 @@ export interface SignInData {
 }
 
 export interface LinksData {
+  user_id: string;
   website?: string;
   email?: string;
   phone?: string;
@@ -29,6 +30,7 @@ export interface LinksData {
 }
 
 export interface ProfileData {
+  user_id: string;
   username: string;
   organization_name: string;
   bio: string;
@@ -50,7 +52,7 @@ class ApiService {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Something went wrong');
+        throw new Error(data.error || 'Something went wrong');
       }
 
       return data;
@@ -58,16 +60,6 @@ class ApiService {
       console.error('API Error:', error);
       throw error;
     }
-  }
-
-  private async makeAuthenticatedRequest(endpoint: string, token: string, options: RequestInit = {}) {
-    return this.makeRequest(endpoint, {
-      ...options,
-      headers: {
-        ...options.headers,
-        Authorization: `Bearer ${token}`,
-      },
-    });
   }
 
   // Authentication endpoints
@@ -85,69 +77,50 @@ class ApiService {
     });
   }
 
-  async verifyToken(token: string) {
-    return this.makeAuthenticatedRequest('/auth/verify-token', token, {
-      method: 'POST',
-    });
-  }
-
-  async getCurrentUser(token: string) {
-    return this.makeAuthenticatedRequest('/auth/me', token);
+  async checkUser(userId: string) {
+    return this.makeRequest(`/auth/check-user/${userId}`);
   }
 
   // Links endpoints
-  async saveLinks(linksData: LinksData, token: string) {
-    return this.makeAuthenticatedRequest('/links/', token, {
+  async saveLinks(linksData: LinksData) {
+    return this.makeRequest('/links/save', {
       method: 'POST',
       body: JSON.stringify(linksData),
     });
   }
 
-  async getLinks(token: string) {
-    return this.makeAuthenticatedRequest('/links/', token);
-  }
-
-  async getLinksByUserId(userId: string) {
-    return this.makeRequest(`/links/${userId}`);
+  async getLinks(userId: string) {
+    return this.makeRequest(`/links/get/${userId}`);
   }
 
   // Profile endpoints
-  async saveProfile(profileData: ProfileData, token: string) {
-    return this.makeAuthenticatedRequest('/profile/', token, {
+  async saveProfile(profileData: ProfileData) {
+    return this.makeRequest('/profile/save', {
       method: 'POST',
       body: JSON.stringify(profileData),
     });
   }
 
-  async getProfile(token: string) {
-    return this.makeAuthenticatedRequest('/profile/', token);
-  }
-
-  async getProfileByUsername(username: string) {
-    return this.makeRequest(`/profile/username/${username}`);
+  async getProfile(userId: string) {
+    return this.makeRequest(`/profile/get/${userId}`);
   }
 
   async checkUsernameAvailability(username: string) {
     return this.makeRequest(`/profile/check-username/${username}`);
   }
 
+  async getProfileByUsername(username: string) {
+    return this.makeRequest(`/profile/by-username/${username}`);
+  }
+
   // User endpoints
-  async getCompleteProfile(token: string) {
-    return this.makeAuthenticatedRequest('/user/complete-profile', token);
+  async getCompleteUserData(userId: string) {
+    return this.makeRequest(`/user/complete/${userId}`);
   }
 
-  async getPublicProfile(userId: string) {
-    return this.makeRequest(`/user/public/${userId}`);
-  }
-
-  async getPublicProfileByUsername(username: string) {
-    return this.makeRequest(`/user/public/username/${username}`);
-  }
-
-  async deleteAccount(token: string) {
-    return this.makeAuthenticatedRequest('/user/account', token, {
-      method: 'DELETE',
-    });
+  // Health check
+  async healthCheck() {
+    return this.makeRequest('/health');
   }
 }
 
